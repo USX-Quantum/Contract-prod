@@ -5,6 +5,7 @@ import "@openzeppelin/contracts@4.4.0/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts@4.4.0/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts@4.4.0/access/Ownable.sol";
 import "@openzeppelin/contracts@4.4.0/utils/Context.sol";
+import "IPinkAntiBot.sol";
 
 /**
  * @dev Collection of functions related to the address type
@@ -348,6 +349,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 
 
 contract USXQuantum is Context, IERC20, Ownable {    
+    IPinkAntiBot public pinkAntiBot;
     using SafeMath for uint256;
     using Address for address;
 
@@ -406,7 +408,7 @@ contract USXQuantum is Context, IERC20, Ownable {
         inSwapAndLiquify = false;
     }
     
-    constructor() {
+    constructor(address pinkAntiBot_ ) {
         _rOwned[_msgSender()] = _rTotal;
         
         _isExcludedFromFee[owner()] = true;
@@ -415,6 +417,8 @@ contract USXQuantum is Context, IERC20, Ownable {
         LIQUIDITY_HOLDER = address(this);
         
         emit Transfer(address(0), _msgSender(), _tTotal);
+        pinkAntiBot = IPinkAntiBot(pinkAntiBot_);
+        pinkAntiBot.setTokenOwner(msg.sender);
     }
 
     function setPair(address _uniswapV2Pair) public onlyOwner() { 
@@ -706,6 +710,7 @@ contract USXQuantum is Context, IERC20, Ownable {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(to != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
+        pinkAntiBot.onPreTransferCheck(from, to, amount);
 
         uint256 currentSupply = totalSupply();
 
