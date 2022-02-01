@@ -126,9 +126,9 @@ contract USXVestingTimelock {
 
     require(contractBalance > 0, "VESTING: balance of contract is 0.");
 
-    // Set the vest release value before the transfer to prevent exploits
-    _vestReleases[vestNumber] = block.timestamp;
-    
+    // Capture the vest release time before the transfer to prevent exploits
+    uint256 captureTime = block.timestamp;
+
     // Transfer and emit event
     // This needs to be a loop over the mapping
     for (uint i=0; i<_beneficiaryArray.length; i++) {
@@ -138,6 +138,7 @@ contract USXVestingTimelock {
       _beneficiaries[_beneficiaryArray[i]] = _beneficiaries[_beneficiaryArray[i]] - amount;
     }
 
+    _vestReleases[vestNumber] = captureTime;
     _releasingTokens = false;
     
     return true;
