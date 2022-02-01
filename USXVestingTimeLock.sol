@@ -33,7 +33,7 @@ contract USXVestingTimelock {
   mapping(address => uint256) _beneficiaries;
   address[] _beneficiaryArray;
 
-  //address _beneficiary;
+  address private _owner;
 
   uint256 _contractCreationDate;
   uint256 _vestPeriodSeconds;
@@ -54,16 +54,21 @@ contract USXVestingTimelock {
     uint256 numberOfVests,
     IBEP20 tokenAddress
   ) {    
-    _token = tokenAddress;
-    _contractCreationDate = block.timestamp;
-
-    // Vesting contract specific variables
-    _numberOfVests = numberOfVests;
-    _vestPeriodSeconds = vestPeriodSeconds;
+      _owner = msg.sender;
+      _token = tokenAddress;
+      _contractCreationDate = block.timestamp;
+      // Vesting contract specific variables
+      _numberOfVests = numberOfVests;
+      _vestPeriodSeconds = vestPeriodSeconds;
+  }
+    
+  modifier onlyOwner() {
+      require(_owner == msg.sender, "Caller is not the owner");
+      _;
   }
 
-  function setBeneficiary(address beneficiary, uint256 amount) external {
-
+  function setBeneficiary(address beneficiary, uint256 amount) external onlyOwner {
+    require(beneficiary != address(0), "VestingWallet: beneficiary is zero address");
     _beneficiaryArray.push(beneficiary);
     _beneficiaries[beneficiary] = amount;
     
@@ -110,7 +115,7 @@ contract USXVestingTimelock {
     return block.timestamp;
   }
 
-  function releaseVest(uint256 vestNumber) external returns(bool) {
+  function releaseVest(uint256 vestNumber) external onlyOwner returns(bool) {
     require(block.timestamp > _getVestReleaseDate(vestNumber), "VESTING: locktime has not run out yet.");
     require(_vestReleases[vestNumber] == 0, "VESTING: vest already released.");
     require(_releasingTokens == false, "VESTING: vest release in progress...");
@@ -121,6 +126,9 @@ contract USXVestingTimelock {
 
     require(contractBalance > 0, "VESTING: balance of contract is 0.");
 
+    // Set the vest release value before the transfer to prevent exploits
+    _vestReleases[vestNumber] = block.timestamp;
+    
     // Transfer and emit event
     // This needs to be a loop over the mapping
     for (uint i=0; i<_beneficiaryArray.length; i++) {
@@ -129,9 +137,6 @@ contract USXVestingTimelock {
       emit ReleasedTokens(_token, _beneficiaryArray[i], amount);
       _beneficiaries[_beneficiaryArray[i]] = _beneficiaries[_beneficiaryArray[i]] - amount;
     }
-
-    // Set the vest release value before the transfer to prevent exploits
-    _vestReleases[vestNumber] = block.timestamp;
 
     _releasingTokens = false;
     
@@ -160,7 +165,6 @@ contract USXVestingTimelock {
 
   // Internal - returns number of tokens to be released per vest
   function _getTokenAmountPerVest(address beneficiary) internal view returns (uint256) {
-    // 1000 tokens / 4 vests = 250 tokens to release
     uint256 amount = _beneficiaries[beneficiary];
     uint256 vestsLeft = _numberOfVestsLeft();
     
