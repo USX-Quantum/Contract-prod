@@ -338,58 +338,82 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
     uint256 private _totalSupply;
+
+
     uint8 private _decimals = 6; 
+
     uint256 private _initalSupply = 2600000000 * (10 ** _decimals);
     string private _name = "USX Quantum";
     string private _symbol = "USX";
+
     IUniswapV2Router02 private _exchangeRouter;
     IUniswapV2Pair private _tokenPair;
+    
     address private _treasury;
+    address private _sellCollection;
     uint256 private _sellTax = 100;
     uint256 private _buyTax = 50;
-    constructor(address treasury_) {
+
+    constructor(address treasury_, address sellCollection_) {
         _treasury = treasury_;
+        _sellCollection = sellCollection_;
         _mint(msg.sender, _initalSupply);
     }
+
     /**
     * @dev Standard Calls
     */
     function name() public view override returns (string memory) {
         return _name;
     }
+
     function symbol() public view override returns (string memory) {
         return _symbol;
     }
+
     function decimals() public view override returns(uint8) {
         return _decimals;
     }
+
     function totalSupply() public view override returns (uint256) {
         return _totalSupply;
     }
+
     function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
+
     function allowance(address owner, address spender) public view override returns (uint256) {
         return _allowances[owner][spender];
     }
+
     /**
     * @dev Other Calls
     */
     function exchangeRouter() public view returns(IUniswapV2Router01) {
         return _exchangeRouter;
     }
+
     function treasury() public view returns(address) {
         return _treasury;
     }
+
+    function sellCollection() public view returns(address) {
+        return _sellCollection;
+    }
+
     function tokenPair() public view returns(IUniswapV2Pair) {
         return _tokenPair;
     }
+
     function sellTax() public view returns(uint256) {
         return _sellTax;
     }
+
     function buyTax() public view returns(uint256) {
         return _buyTax;
     }
+
     /**
     * @dev Exchange and token pair Setter Transactions
     */
@@ -400,21 +424,29 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         require(address(factory) != address(0), "TOKEN: exchange router address is not compatible, are you sure it's correct?");
         _tokenPair = IUniswapV2Pair(factory.getPair(address(this), _exchangeRouter.WETH()));
     }
+
     function emergencySetTokenPair(address tokenPair_) public onlyOwner {
         _tokenPair = IUniswapV2Pair(tokenPair_);
     }
+
     /**
     * @dev Specific Setter Transactions
     */
     function setTreasury(address treasury_) public onlyOwner {
         _treasury = treasury_;
     }
+
+    function setSellCollection(address sellCollection_) public onlyOwner {
+        _sellCollection = sellCollection_;
+    }
+
     function setTaxes(uint256 buyTax_, uint256 sellTax_) public onlyOwner {
         require(buyTax_ <= PERCENT_CONST, "TOKEN: Precentage higher than the percentage constant.");
         require(sellTax_ <= PERCENT_CONST, "TOKEN: Precentage higher than the percentage constant.");
         _buyTax = buyTax_;
         _sellTax = sellTax_;
     }
+
     /**
     * @dev Standard ERC20 Transactions
     */
@@ -427,6 +459,7 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         _approve(_msgSender(), spender, amount);
         return true;
     }
+
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
         _transfer(sender, recipient, amount);
         uint256 currentAllowance = _allowances[sender][_msgSender()];
@@ -434,16 +467,19 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         _approve(sender, _msgSender(), currentAllowance - amount);
         return true;
     }
+
     function increaseAllowance(address spender, uint256 addedValue) public returns (bool) {
         _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
         return true;
     }
+
     function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
         uint256 currentAllowance = _allowances[_msgSender()][spender];
         require(currentAllowance >= subtractedValue, "TOKEN: decreased allowance below zero");
         _approve(_msgSender(), spender, currentAllowance - subtractedValue);
         return true;
     }
+
     /**
     * @dev Private Transactions
     */
@@ -452,22 +488,35 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         require(recipient != address(0), "TOKEN: transfer to the zero address");
         require(_balances[sender] >= amount, "TOKEN: transfer amount exceeds balance");
         uint256 transferAmount = amount;
-        uint256 fee = 0;
+        uint256 sellFee;
+        uint256 buyFee;
+        
+        sellFee = 0;
+        buyFee = 0;
+
         // Buying
         if(address(_tokenPair) == sender) {
-            fee = _calculateFee(_buyTax, amount);
+            buyFee = _calculateFee(_buyTax, amount);
+            // To treasury wallet
+            if(buyFee > 0) {
+                _balances[_treasury] = _balances[_treasury] + buyFee;                
+                emit Transfer(recipient, _treasury, buyFee);
+            } 
         }
         // Selling
         else if(address(_tokenPair) == recipient) {
-            fee = _calculateFee(_sellTax, amount);
+            sellFee = _calculateFee(_sellTax, amount);
+            // To collection wallet
+            if(sellFee > 0) {
+                require(_balances[sender] + sellFee >= amount, "TOKEN: transfer amount plus fee exceeds balance");
+                _balances[_sellCollection] = _balances[_sellCollection] + sellFee;
+                emit Transfer(sender, _sellCollection, sellFee);
+            }
         }
-        if(fee > 0) {
-            _balances[_treasury] = _balances[_treasury] + fee;
-            transferAmount = amount - fee;
-            emit Transfer(sender, _treasury, fee);
-        }
-        _balances[sender] = _balances[sender] - transferAmount;
-        _balances[recipient] += transferAmount;
+
+        _balances[sender] = _balances[sender] - transferAmount - sellFee;
+        _balances[recipient] = _balances[recipient] + transferAmount - buyFee;
+
         emit Transfer(sender, recipient, transferAmount);
     }
 
@@ -477,6 +526,7 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         _balances[account] += amount;
         emit Transfer(address(0), account, amount);
     }
+
     function _burn(address account, uint256 amount) internal {
         require(account != address(0), "TOKEN: burn from the zero address");
         uint256 accountBalance = _balances[account];
@@ -485,15 +535,19 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         _totalSupply -= amount;
         emit Transfer(account, address(0), amount);
     }
+
     function _approve(address owner, address spender, uint256 amount) internal {
         require(owner != address(0), "TOKEN: approve from the zero address");
         require(spender != address(0), "TOKEN: approve to the zero address");
         _allowances[owner][spender] = amount;
         emit Approval(owner, spender, amount);
     }
+
     function _calculateFee(uint256 tax, uint256 amount) internal pure returns(uint256){
+        // Calculations should be in 'decimal'
         return amount * tax / PERCENT_CONST;
     }
+
     /**
     * @dev Cleanup Transactions
     */
@@ -502,6 +556,7 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
         uint256 _contractBalance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).transfer(_to, _contractBalance);
     }
+
     function Sweep() external onlyOwner {
         uint256 balance = address(this).balance;
         payable(owner()).transfer(balance);
