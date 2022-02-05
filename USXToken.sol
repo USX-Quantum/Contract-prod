@@ -340,7 +340,7 @@ contract USXToken is Context, IERC20, IERC20Metadata, Ownable {
     uint256 private _totalSupply;
 
 
-    uint8 private _decimals = 6; 
+    uint8 private _decimals = 9; 
 
     uint256 private _initalSupply = 2600000000 * (10 ** _decimals);
     string private _name = "USX Quantum";
