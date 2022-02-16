@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: Unlicensed
+pragma solidity ^0.8.4;
 
 interface IBEP20 {
   
@@ -27,21 +27,21 @@ interface IBEP20 {
   event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract USXVestingTimelock {
+contract USXTokenVesting {
 
-  IBEP20 _token;
-  mapping(address => uint256) _beneficiaries;
+  IBEP20 private _token;
+  mapping(address => uint256) private _beneficiaries;
   address[] _beneficiaryArray;
 
   address private _owner;
 
-  uint256 _contractCreationDate;
-  uint256 _vestPeriodSeconds;
-  uint256 _numberOfVests;
+  uint256 private _contractCreationDate;
+  uint256 private _vestPeriodSeconds;
+  uint256 private _numberOfVests;
 
-  bool _releasingTokens;
+  bool private _releasingTokens;
 
-  mapping(uint256 => uint256) _vestReleases;
+  mapping(uint256 => uint256) private _vestReleases;
 
   event ReleasedTokens(
     IBEP20 tokenAddress,
@@ -180,7 +180,8 @@ contract USXVestingTimelock {
     uint256 vestsLeft = 0;  
 
     for(uint256 i = 1; i <= _numberOfVests; i++) {
-      if(_vestReleases[i] == 0) vestsLeft = vestsLeft + 1;
+      if(_vestReleases[i] == 0) 
+        vestsLeft = vestsLeft + 1;
     }
 
     return vestsLeft;
