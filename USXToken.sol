@@ -764,10 +764,10 @@ contract USXToken is ERC20, Ownable {
     	uint256 gas,
     	address indexed processor
     );
-    constructor() ERC20("USX Quantum", "USX") {
-    	//IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    constructor() ERC20("Test Token", "TSTT") {
+    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
         // CHANGE - TestNet
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
+        //IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
         // Create a uniswap pair for this new token
         address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
@@ -890,8 +890,8 @@ contract USXToken is ERC20, Ownable {
         isWalletLimitExempt[holder] = exempt;
     }
 
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) external onlyOwner {
-        _addLiquidity(tokenAmount, ethAmount);
+    function addLiquidity(uint256 tokenAmount) payable external onlyOwner {
+        _addLiquidity(tokenAmount, msg.value);
     }
 
     function swapBack(uint256 tokensToLiquify) external onlyOwner {
@@ -1003,7 +1003,7 @@ contract USXToken is ERC20, Ownable {
         if(tokensToLP > 0 && bnbForLiquidity > 0)    
             _addLiquidity(tokensToLP, bnbForLiquidity);
     
-        if(bnbForMarketing > 0)    
+        if(bnbForMarketing > 0)
             payable(_marketingWallet).transfer(bnbForMarketing);
         
         if(bnbForDev > 0)
@@ -1029,5 +1029,4 @@ contract USXToken is ERC20, Ownable {
         
         emit SwapAndLiquify(tokenAmount, ethAmount, tokenAmount);
     }
-    
 }
