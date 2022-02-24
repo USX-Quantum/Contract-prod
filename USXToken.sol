@@ -708,88 +708,81 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 
 contract USXToken is ERC20, Ownable {
 
-    address public uniswapV2PairAddress;
-    IUniswapV2Pair uniswapV2Pair;
-    IUniswapV2Router02 public uniswapV2Router;
+    IUniswapV2Pair private _uniswapV2Pair;          
+    IUniswapV2Router02 private _uniswapV2Router; 
 
-    address public _marketingWallet;
-    address public _devWallet;
-    address public _buyBackWallet;
+    address private _marketingWallet;            
+    address private _teamWallet;                 
+    address private _buyBackWallet;              
+ 
+    bool private _restrictWhales;                
 
-    bool public restrictWhales = true;
+    uint256 private _maxTxAmount;                
+    uint256 private _walletMax;                  
+    uint256 private _swapTokensAtAmount;         
 
-    // Ask about these 3 values
-    uint256 public maxTxAmount = 2600000 * (10**super.decimals());
-    uint256 public walletMax = 26000000 * (10**super.decimals());
-    uint256 public swapTokensAtAmount = 25000 * (10**super.decimals());
-
-    uint256 public marketingFee;
-    uint256 public buyBackFee;
-    uint256 public extraFeeOnSell;
-    uint256 public devFee;
-    uint256 public liquityPercent;
-    uint256 public totalFees;
+    uint256 private _marketingFee;               
+    uint256 private _buyBackFee;                  
+    uint256 private _baseFee;             
+    uint256 private _teamFee;                    
+    uint256 private _liquityPercent;             
+    uint256 private _totalFees;                  
     
-    // use by default 300,000 gas to process auto-claiming dividends
-    uint256 public gasForProcessing = 300000;
+    mapping (address => bool) private _isExcludedFromFees;  
+    mapping (address => bool) private _isWalletLimitExempt; 
+    mapping (address => bool) private _isTxLimitExempt;     
+    mapping (address => bool) private _isBlacklisted;       
+    mapping (address => bool) private _isAddressLocked;     
 
-    mapping (address => bool) public _isExcludedFromFees;
-    mapping (address => bool) public isWalletLimitExempt;
-    mapping (address => bool) public isTxLimitExempt;
-    mapping (address => bool) public _isBlacklisted;
-    mapping (address => bool) public _isAddressLocked;
-
-    bool private tradingOpen;
-    bool private swapping;
-    bool public swapAndLiquifyEnabled = true;
-    bool public swapAndLiquifyByLimitOnly = false;
+    //bool private _tradingOpen;
+    bool private _swapping;
+    bool private _swapAndLiquifyEnabled;
+    bool private _swapAndLiquifyByLimitOnly;
 
     modifier lockTheSwap {
-        swapping = true;
+        _swapping = true;
         _;
-        swapping = false;
+        _swapping = false;
     }
     
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
+    event UpdateUniswapV2Pair(address indexed newAddress, address indexed oldAddress);
+    //walletCode = 1-Marketing, 2-Team, 3-BuyBack
+    event UpdateWallet(address indexed newAddress, address indexed oldAddress, uint8 walletCode);
     event ExcludeFromFees(address indexed account, bool isExcluded);
-    event GasForProcessingUpdated(uint256 indexed newValue, uint256 indexed oldValue);
     event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiqudity);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
-    event SendDividends(uint256 tokensSwapped, uint256 amount);
-    event ProcessedDividendTracker(
-    	uint256 iterations,
-    	uint256 claims,
-        uint256 lastProcessedIndex,
-    	bool indexed automatic,
-    	uint256 gas,
-    	address indexed processor
-    );
-    constructor() ERC20("Test Token", "TSTT") {
-    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-        // CHANGE - TestNet
-        //IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
-        // Create a uniswap pair for this new token
-        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
-            .createPair(address(this), _uniswapV2Router.WETH());
 
-        uniswapV2Router = _uniswapV2Router;
+    constructor() ERC20("USX Quantum", "USX") {
 
-        uniswapV2Pair = IUniswapV2Pair(_uniswapV2Pair);
-        uniswapV2PairAddress = _uniswapV2Pair;
-    
-        isWalletLimitExempt[owner()] = true;
-        isWalletLimitExempt[uniswapV2PairAddress] = true;
-        isWalletLimitExempt[address(this)] = true;
+        // Intialize the settings
+        _uniswapV2Pair = IUniswapV2Pair(0x0000000000000000000000000000000000000000);
+        _uniswapV2Router = IUniswapV2Router02(0x0000000000000000000000000000000000000000);
+
+        _marketingWallet = 0x0000000000000000000000000000000000000000;
+        _teamWallet = 0x0000000000000000000000000000000000000000;
+        _buyBackWallet = 0x0000000000000000000000000000000000000000;
+
+        _restrictWhales = true;
+
+        _maxTxAmount = 2600000 * (10**super.decimals());
+        _walletMax = 26000000 * (10**super.decimals());
+        _swapTokensAtAmount = 25000 * (10**super.decimals());                         
+
+        updateFees(3, 3, 2, 2, 30);
+
+        _isWalletLimitExempt[owner()] = true;
+        _isWalletLimitExempt[address(this)] = true;
         
-        isTxLimitExempt[owner()] = true;
-        isTxLimitExempt[address(this)] = true;
+        _isTxLimitExempt[owner()] = true;
+        _isTxLimitExempt[address(this)] = true;
 
         // exclude from paying fees or having max transaction amount    
         excludeFromFees(owner(), true);
         excludeFromFees(address(this), true);
 
-        updateFees(3, 3, 2, 2, 25);
-        tradingOpen = false;
+        _swapAndLiquifyEnabled = true;
+        _swapAndLiquifyByLimitOnly = false;
 
         /*
             _mint is an internal function in ERC20.sol that is only called here,
@@ -799,62 +792,165 @@ contract USXToken is ERC20, Ownable {
     }
 
     receive() external payable {}
-
-    function updateFees(uint256 newMarketingFee, uint256 newDevFee, uint256 newExtraFeeOnSell, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
-        extraFeeOnSell = newExtraFeeOnSell;
-        liquityPercent = newLiquidityPercent;
-
-        marketingFee = newMarketingFee;
-        devFee = newDevFee;
-        buyBackFee = newBuyBackFee;
-        
-        totalFees = marketingFee + devFee + buyBackFee;
-    }
-    
-    function openTrading() external onlyOwner() {
-        require(!tradingOpen,"trading is already open");
-        tradingOpen = true;
-    }
-
+   
+    // VIEW functions
     function blockTime() external view returns(uint){
         return block.timestamp;
     }
+    function exchangeRouter() external view returns(IUniswapV2Router02) {
+        return _uniswapV2Router;
+    }
+    function tokenPair() external view returns(IUniswapV2Pair) {
+        return _uniswapV2Pair;
+    }
+    function marketingWallet() external view returns(address) {
+        return _marketingWallet;
+    }
+    function teamWallet() external view returns(address) {
+        return _teamWallet;
+    }
+    function buybackWallet() external view returns(address) {
+        return _buyBackWallet;
+    }
+    function walletMaxEnabled() external view returns(bool){
+        return _restrictWhales;
+    }
+    function isWalletBlackListed(address account) external view returns(bool){
+        return _isBlacklisted[account];
+    }
+    function isAddressLocked(address account) external view returns(bool){
+        return _isAddressLocked[account];
+    }
+    function isExcludedFromFees(address account) external view returns(bool){
+        return _isExcludedFromFees[account];
+    }
+    function isWalletLimitExempt(address account) external view returns(bool){
+        return _isWalletLimitExempt[account];
+    }
+    function isTxLimitExempt(address account) external view returns(bool){
+        return _isTxLimitExempt[account];
+    }
+    function maxTxAmount() external view returns(uint256) {
+        return _maxTxAmount;
+    }
+    function walletMax() external view returns(uint256) {
+        return _walletMax;
+    }
+    function swapTokensAtAmount() external view returns(uint256) {
+        return _swapTokensAtAmount;
+    }
+    function marketingFee() external view returns(uint256) {
+        return _marketingFee;
+    }
+    function buyBackFee() external view returns(uint256) {
+        return _buyBackFee;
+    }
+    function baseFee() external view returns(uint256){
+        return _baseFee;
+    }
+    function teamFee() external view returns(uint256){
+        return _teamFee;
+    }
+    function liquityPercent() external view returns(uint256){
+        return _liquityPercent;
+    }
+    function swapping() external view returns(bool){
+        return _swapping;
+    }
+    function swapAndLiquifyEnabled() external view returns(bool){
+        return _swapAndLiquifyEnabled;
+    }
+    function swapAndLiquifyByLimitOnly() external view returns(bool){
+        return _swapAndLiquifyByLimitOnly;
+    }
+
+    // SET functions
+   function updateFees(uint256 newMarketingFee, uint256 newTeamFee, uint256 newBaseFee, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
+
+        _baseFee = newBaseFee;
+        _liquityPercent = newLiquidityPercent;
+
+        _marketingFee = newMarketingFee;
+        _teamFee = newTeamFee;
+        _buyBackFee = newBuyBackFee;
+        
+        _totalFees = _marketingFee + _teamFee + _buyBackFee;
+    }
 
     function changeIsTxLimitExempt(address holder, bool exempt) external onlyOwner {
-        isTxLimitExempt[holder] = exempt;
+        _isTxLimitExempt[holder] = exempt;
     }
 
-    function exchangeRouter() public view returns(IUniswapV2Router01) {
-        return uniswapV2Router;
-    }
+    function setMarketingWallet(address wallet) external onlyOwner {
+        require(wallet != _marketingWallet, "USX: The marketing wallet already has that address");
 
-    function tokenPair() public view returns(IUniswapV2Pair) {
-        return uniswapV2Pair;
-    }
+        _setWallet(wallet, _marketingWallet, 1);
 
-    function setMarketingWallet(address wallet) public onlyOwner {
         _marketingWallet = payable(wallet);
     }
     
-    function setDevWallet(address wallet) public onlyOwner {
-        _devWallet = payable(wallet);
+    function setTeamWallet(address wallet) external onlyOwner {
+        require(wallet != _teamWallet, "USX: The team wallet already has that address");
+
+        _setWallet(wallet, _teamWallet, 2);
+
+        _teamWallet = payable(wallet);
     }
 
-    function setBuyBackWallet(address wallet) public onlyOwner {
+    function setBuyBackWallet(address wallet) external onlyOwner {
+        require(wallet != _buyBackWallet, "USX: The buy back wallet already has that address");
+
+        _setWallet(wallet, _buyBackWallet, 3);
+
         _buyBackWallet = payable(wallet);
     }
-        
-    function updateUniswapV2Router(address newAddress) public onlyOwner {
-        require(newAddress != address(uniswapV2Router), "USX: The router already has that address");
-        emit UpdateUniswapV2Router(newAddress, address(uniswapV2Router));
-        uniswapV2Router = IUniswapV2Router02(newAddress);
+
+    function _setWallet(address newWallet, address oldWallet, uint8 walletCode) private
+    {
+        // Set old wallet to false
+        if(oldWallet != 0x0000000000000000000000000000000000000000)
+        {
+            _isWalletLimitExempt[oldWallet] = false;
+            _isTxLimitExempt[oldWallet] = false;
+            excludeFromFees(oldWallet, false);        
+        }
+
+        if (newWallet != 0x0000000000000000000000000000000000000000)
+        {        
+            _isWalletLimitExempt[newWallet] = true;
+            _isTxLimitExempt[newWallet] = true;
+            excludeFromFees(newWallet, true);
+        }
+
+        emit UpdateWallet(newWallet, oldWallet, walletCode);
     }
 
-    function blacklistAddress(address account, bool value) public onlyOwner {
+    function updateUniswapV2Router(address newAddress) external onlyOwner {
+        require(newAddress != address(_uniswapV2Router), "USX: The router already has that address");
+        emit UpdateUniswapV2Router(newAddress, address(_uniswapV2Router));
+        _uniswapV2Router = IUniswapV2Router02(newAddress);
+    }
+
+    function updateUniswapV2Pair(address newPairAddress) external onlyOwner {
+        require(newPairAddress != address(_uniswapV2Pair), "USX: The pair already has that address");
+
+        if (address(_uniswapV2Pair) != 0x0000000000000000000000000000000000000000)
+        {
+            _isWalletLimitExempt[address(_uniswapV2Pair)] = false;
+        }
+        
+        emit UpdateUniswapV2Pair(newPairAddress, address(_uniswapV2Pair));
+
+        _uniswapV2Pair = IUniswapV2Pair(newPairAddress);
+        
+        _isWalletLimitExempt[address(_uniswapV2Pair)] = true;
+    }
+
+    function blacklistAddress(address account, bool value) external onlyOwner {
         _isBlacklisted[account] = value;
     }
     
-    function updateLockStatus(address[] calldata addressList, bool value) public onlyOwner {
+    function updateLockStatus(address[] calldata addressList, bool value) external onlyOwner {
         for (uint8 i = 0; i < addressList.length; i++) {
 			_isAddressLocked[addressList[i]] = value;
 		}
@@ -862,55 +958,40 @@ contract USXToken is ERC20, Ownable {
 
     function excludeFromFees(address account, bool excluded) public onlyOwner {
         require(_isExcludedFromFees[account] != excluded, "USX: Account is already the value of 'excluded'");
+        // exclude from paying fees or having max transaction amount
         _isExcludedFromFees[account] = excluded;
 
         emit ExcludeFromFees(account, excluded);
     }
 
-    function updateGasForProcessing(uint256 newValue) public onlyOwner {
-        require(newValue >= 200000 && newValue <= 750000, "USX: gasForProcessing must be between 200,000 and 750,000");
-        require(newValue != gasForProcessing, "USX: Cannot update gasForProcessing to same value");
-        emit GasForProcessingUpdated(newValue, gasForProcessing);
-        gasForProcessing = newValue;
-    }
-
     function setMaxTxAMount(uint256 amount) external onlyOwner{
-        maxTxAmount = amount;
+        _maxTxAmount = amount;
     }
 
     function changeWalletLimit(uint256 newLimit) external onlyOwner {
-        walletMax  = newLimit;
+        _walletMax  = newLimit;
     }
 
     function enableDisableWalletMax(bool newValue) external onlyOwner {
-       restrictWhales = newValue;
+       _restrictWhales = newValue;
     }
 
     function changeIsWalletLimitExempt(address holder, bool exempt) external onlyOwner {
-        isWalletLimitExempt[holder] = exempt;
-    }
-
-    function addLiquidity(uint256 tokenAmount) payable external onlyOwner {
-        _addLiquidity(tokenAmount, msg.value);
-    }
-
-    function swapBack(uint256 tokensToLiquify) external onlyOwner {
-        _swapBack(tokensToLiquify);
+        _isWalletLimitExempt[holder] = exempt;
     }
 
     function changeSwapBackSettings(bool enableSwapBack, bool swapByLimitOnly, uint256 newSwapBackLimit) external onlyOwner {
-        swapAndLiquifyByLimitOnly = swapByLimitOnly;
-        swapTokensAtAmount = newSwapBackLimit;
+        _swapAndLiquifyByLimitOnly = swapByLimitOnly;
+        _swapTokensAtAmount = newSwapBackLimit;
         
-        if(swapAndLiquifyEnabled != enableSwapBack)
+        if(_swapAndLiquifyEnabled != enableSwapBack)
         {
-            swapAndLiquifyEnabled = enableSwapBack;
+            _swapAndLiquifyEnabled = enableSwapBack;
             emit SwapAndLiquifyEnabledUpdated(enableSwapBack);
         }
     }
     
     function _transfer(address from, address to, uint256 amount ) internal override {
-        require(tradingOpen,"USX: trading is not open");
         require(to != address(0), "USX: transfer to the zero address");
         require(from != address(0), "USX: transfer from the zero address");
         require(!_isBlacklisted[from] && !_isBlacklisted[to], "USX: To/from address is blacklisted!");
@@ -924,36 +1005,42 @@ contract USXToken is ERC20, Ownable {
             return;
         }    
 
-        if(!isTxLimitExempt[from] && !isTxLimitExempt[to] && !swapping) {
-            require(amount <= maxTxAmount, "USX: Transfer amount exceeds the maxTxAmount.");
+        if(!_isTxLimitExempt[from] && !_isTxLimitExempt[to] && !_swapping) {
+            require(amount <= _maxTxAmount, "USX: Transfer amount exceeds the maxTxAmount.");
         }
 
-        if(restrictWhales && !isWalletLimitExempt[to]){
-            require(balanceOf(to) + amount <= walletMax, "USX: Wallet limit reached");
+        if(_restrictWhales && !_isWalletLimitExempt[to]){
+            require(balanceOf(to) + amount <= _walletMax, "USX: Wallet limit reached");
         }
 
         uint256 contractTokenBalance = balanceOf(address(this));
 
-        if(swapAndLiquifyEnabled && totalFees > 0 && contractTokenBalance >= swapTokensAtAmount && !swapping && from != uniswapV2PairAddress) { 
-            if(swapAndLiquifyByLimitOnly)
-                contractTokenBalance = swapTokensAtAmount;
+        if(_swapAndLiquifyEnabled && _totalFees > 0 && contractTokenBalance >= _swapTokensAtAmount && !_swapping && from != address(_uniswapV2Pair)) { 
+            if(_swapAndLiquifyByLimitOnly)
+                contractTokenBalance = _swapTokensAtAmount;
                 
             _swapBack(contractTokenBalance); 
         }
 
-        bool takeFee = !swapping;
+        bool takeFee = !_swapping;
 
         // if any account belongs to _isExcludedFromFee account then remove the fee
         if(_isExcludedFromFees[from] || _isExcludedFromFees[to]) {
             takeFee = false;
         }
 
-        if(takeFee && totalFees > 0) {
-        	uint256 fees = (amount * totalFees) / 100;
+        if(takeFee && _totalFees > 0) {
+            // Wallet to wallet - only charge extra fee
+        	uint256 fees = (amount * _baseFee) / 100;
 
-            // Extra sell fee added
-            if(to == uniswapV2PairAddress) {
-                fees = (amount * (totalFees + extraFeeOnSell)) / 100;
+            // Sell fee added
+            if(to == address(_uniswapV2Pair)) {
+                fees = (amount * (_totalFees + _baseFee)) / 100;
+            }
+
+            // Buy fee
+            if(from == address(_uniswapV2Pair)){
+                fees = (amount * _totalFees) / 100;
             }
 
         	amount = amount - fees;
@@ -967,16 +1054,16 @@ contract USXToken is ERC20, Ownable {
     function _swapBack(uint256 tokensToLiquify) internal lockTheSwap {
         uint256 startingBNBBalance = address(this).balance;
         // Calc tokens to swap
-        uint256 tokensToLP = (tokensToLiquify * liquityPercent) / 100;
+        uint256 tokensToLP = (tokensToLiquify * _liquityPercent) / 100;
         uint256 amountToSwap = tokensToLiquify - tokensToLP;
 
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
+        path[1] = _uniswapV2Router.WETH();
 
-        _approve(address(this), address(uniswapV2Router), tokensToLiquify);
+        _approve(address(this), address(_uniswapV2Router), tokensToLiquify);
 
-        uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        _uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             amountToSwap,
             0,
             path,
@@ -988,29 +1075,32 @@ contract USXToken is ERC20, Ownable {
         uint256 bnbBalanceToUse = address(this).balance - startingBNBBalance;
 
         // For Liquidity
-        uint256 bnbForLiquidity = (bnbBalanceToUse * liquityPercent) / 100;
+        uint256 bnbForLiquidity = (bnbBalanceToUse * _liquityPercent) / 100;
         bnbBalanceToUse = bnbBalanceToUse - bnbForLiquidity;
 
-        uint256 singleUnitBNB = bnbBalanceToUse / totalFees;
-        uint256 bnbForMarketing = singleUnitBNB * marketingFee;
-        uint256 bnbForDev = singleUnitBNB * devFee;
-        uint256 bnbForUSXBuyBack = singleUnitBNB * buyBackFee;
+        if (_totalFees > 0)
+        {
+            uint256 singleUnitBNB = bnbBalanceToUse / _totalFees;
+            uint256 bnbForMarketing = singleUnitBNB * _marketingFee;
+            uint256 bnbForTeam = singleUnitBNB * _teamFee;
+            uint256 bnbForUSXBuyBack = singleUnitBNB * _buyBackFee;
 
-        // Catch all and put back into liquidity
-        if ((bnbBalanceToUse - bnbForMarketing - bnbForDev - bnbForUSXBuyBack) > 0)
-            bnbForLiquidity = bnbForLiquidity + (bnbBalanceToUse - bnbForMarketing - bnbForDev - bnbForUSXBuyBack);
+            // Catch all and put back into liquidity
+            if ((bnbBalanceToUse - bnbForMarketing - bnbForTeam - bnbForUSXBuyBack) > 0)
+                bnbForLiquidity = bnbForLiquidity + (bnbBalanceToUse - bnbForMarketing - bnbForTeam - bnbForUSXBuyBack);
 
-        if(tokensToLP > 0 && bnbForLiquidity > 0)    
-            _addLiquidity(tokensToLP, bnbForLiquidity);
+            if(tokensToLP > 0 && bnbForLiquidity > 0)    
+                _addLiquidity(tokensToLP, bnbForLiquidity);
     
-        if(bnbForMarketing > 0)
-            payable(_marketingWallet).transfer(bnbForMarketing);
+            if(bnbForMarketing > 0)
+                payable(_marketingWallet).transfer(bnbForMarketing);
         
-        if(bnbForDev > 0)
-            payable(_devWallet).transfer(bnbForDev);       
+            if(bnbForTeam > 0)
+                payable(_teamWallet).transfer(bnbForTeam);       
         
-        if(bnbForUSXBuyBack > 0)
-            payable(_buyBackWallet).transfer(bnbForUSXBuyBack);
+            if(bnbForUSXBuyBack > 0)
+                payable(_buyBackWallet).transfer(bnbForUSXBuyBack);
+        }
     }
 
     function _addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
@@ -1018,7 +1108,7 @@ contract USXToken is ERC20, Ownable {
         uint amountETH;
         uint liquidity;
         // add the liquidity
-        (amountToken, amountETH, liquidity) = uniswapV2Router.addLiquidityETH{value: ethAmount}(
+        (amountToken, amountETH, liquidity) = _uniswapV2Router.addLiquidityETH{value: ethAmount}(
             address(this),
             tokenAmount,
             0, // slippage is unavoidable
