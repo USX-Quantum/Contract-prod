@@ -807,9 +807,9 @@ contract USXToken is ERC20, Ownable {
 
     // SET functions
    function updateFees(uint256 newBaseFee, uint256 newMarketingFee, uint256 newTeamFee, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
-        require(newBaseFee <= uint256(5), "USX: Base fee must can not be greater than 5%");
-        require((newMarketingFee + newTeamFee + newBuyBackFee) <= uint256(10), "USX: Total fees (mkt, team, buy) can not be greater than 10%");
-        require(newLiquidityPercent < uint256(50), "USX: Liquidity can not be greater than 50%");
+        require(newBaseFee <= uint256(5), "USX: Base can not be > than 5%");
+        require((newMarketingFee + newTeamFee + newBuyBackFee) <= uint256(10), "USX: Total can not be > than 10%");
+        require(newLiquidityPercent < uint256(50), "USX: Liquidity can not be > than 50%");
 
         _baseFee = newBaseFee;
         _liquityPercent = newLiquidityPercent;
@@ -870,13 +870,13 @@ contract USXToken is ERC20, Ownable {
     }
 
     function updateUniswapV2Router(address newAddress) external onlyOwner {
-        require(newAddress != address(_uniswapV2Router), "USX: The router already has that address");
+        require(newAddress != address(_uniswapV2Router),   "USX: The router address is the same");
         emit UpdateUniswapV2Router(newAddress, address(_uniswapV2Router));
         _uniswapV2Router = IUniswapV2Router02(newAddress);
     }
 
     function updateUniswapV2Pair(address newPairAddress) external onlyOwner {
-        require(newPairAddress != address(_uniswapV2Pair), "USX: The pair already has that address");
+        require(newPairAddress != address(_uniswapV2Pair), "USX: The pair address is the same");
 
         if (address(_uniswapV2Pair) != 0x0000000000000000000000000000000000000000)
         {
@@ -901,7 +901,7 @@ contract USXToken is ERC20, Ownable {
     }
 
     function excludeFromFees(address account, bool excluded) public onlyOwner {
-        require(_isExcludedFromFees[account] != excluded, "USX: Account is already the value of 'excluded'");
+        require(_isExcludedFromFees[account] != excluded, "USX: Account is already 'excluded'");
         // exclude from paying fees or having max transaction amount
         _isExcludedFromFees[account] = excluded;
 
@@ -909,13 +909,13 @@ contract USXToken is ERC20, Ownable {
     }
 
     function setMaxTxAMount(uint256 amount) external onlyOwner{
-        require(amount >= uint256(115000 * (10**super.decimals())), "USX: Max transaction must be at least 115k");
+        require(amount >= uint256(115000 * (10**super.decimals())), "USX: Max trx must be >= 115k");
 
         _maxTxAmount = amount;
     }
 
     function changeWalletLimit(uint256 newLimit) external onlyOwner {
-        require(newLimit >= uint256(115000 * (10**super.decimals())), "USX: Wallet limit must be at least 115k");
+        require(newLimit >= uint256(115000 * (10**super.decimals())), "USX: Wallet limit must be >= 115k");
         
         _walletMax  = newLimit;
     }
@@ -940,8 +940,8 @@ contract USXToken is ERC20, Ownable {
     }
     
     function _transfer(address from, address to, uint256 amount ) internal override {
-        require(to != address(0), "USX: transfer to the zero address");
-        require(from != address(0), "USX: transfer from the zero address");
+        require(to != address(0), "USX: transfer to the 0 address");
+        require(from != address(0), "USX: transfer from the 0 address");
         require(!_isBlacklisted[from] && !_isBlacklisted[to], "USX: To/from address is blacklisted!");
         
         if(_isAddressLocked[from]) {
@@ -954,7 +954,7 @@ contract USXToken is ERC20, Ownable {
         }    
 
         if(!_isTxLimitExempt[from] && !_isTxLimitExempt[to] && !_swapping) {
-            require(amount <= _maxTxAmount, "USX: Transfer amount exceeds the maxTxAmount.");
+            require(amount <= _maxTxAmount, "USX: Transfer amount > the max.");
         }
 
         if(_restrictWhales && !_isWalletLimitExempt[to]){
@@ -1019,7 +1019,7 @@ contract USXToken is ERC20, Ownable {
             uint(block.timestamp)
         );
         
-        require(address(this).balance > startingBNBBalance, "USX: Not enough BNB for transactions");
+        require(address(this).balance > startingBNBBalance, "USX: Not enough BNB for trx");
         uint256 bnbBalanceToUse = address(this).balance - startingBNBBalance;
 
         // For Liquidity
