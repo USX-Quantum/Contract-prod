@@ -445,65 +445,6 @@ contract Ownable is Context {
     }
 }
 
-library IterableMapping {
-    // Iterable mapping from address to uint;
-    struct Map {
-        address[] keys;
-        mapping(address => uint) values;
-        mapping(address => uint) indexOf;
-        mapping(address => bool) inserted;
-    }
-
-    function get(Map storage map, address key) public view returns (uint) {
-        return map.values[key];
-    }
-
-    function getIndexOfKey(Map storage map, address key) public view returns (int) {
-        if(!map.inserted[key]) {
-            return -1;
-        }
-        return int(map.indexOf[key]);
-    }
-
-    function getKeyAtIndex(Map storage map, uint index) public view returns (address) {
-        return map.keys[index];
-    }
-
-    function size(Map storage map) public view returns (uint) {
-        return map.keys.length;
-    }
-
-    function set(Map storage map, address key, uint val) public {
-        if (map.inserted[key]) {
-            map.values[key] = val;
-        } else {
-            map.inserted[key] = true;
-            map.values[key] = val;
-            map.indexOf[key] = map.keys.length;
-            map.keys.push(key);
-        }
-    }
-
-    function remove(Map storage map, address key) public {
-        if (!map.inserted[key]) {
-            return;
-        }
-
-        delete map.inserted[key];
-        delete map.values[key];
-
-        uint index = map.indexOf[key];
-        uint lastIndex = map.keys.length - 1;
-        address lastKey = map.keys[lastIndex];
-
-        map.indexOf[lastKey] = index;
-        delete map.indexOf[key];
-
-        map.keys[index] = lastKey;
-        map.keys.pop();
-    }
-}
-
 interface IUniswapV2Factory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint);
 
@@ -753,7 +694,7 @@ contract USXToken is ERC20, Ownable {
     event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiqudity);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
 
-    constructor() ERC20("USX Quantum", "USX") {
+    constructor() ERC20("USQ Test", "USQ1") {
 
         // Intialize the settings
         _uniswapV2Pair = IUniswapV2Pair(0x0000000000000000000000000000000000000000);
@@ -865,7 +806,10 @@ contract USXToken is ERC20, Ownable {
     }
 
     // SET functions
-   function updateFees(uint256 newMarketingFee, uint256 newTeamFee, uint256 newBaseFee, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
+   function updateFees(uint256 newBaseFee, uint256 newMarketingFee, uint256 newTeamFee, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
+        require(newBaseFee <= uint256(5), "USX: Base fee must can not be greater than 5%");
+        require((newMarketingFee + newTeamFee + newBuyBackFee) <= uint256(10), "USX: Total fees (mkt, team, buy) can not be greater than 10%");
+        require(newLiquidityPercent < uint256(50), "USX: Liquidity can not be greater than 50%");
 
         _baseFee = newBaseFee;
         _liquityPercent = newLiquidityPercent;
@@ -965,10 +909,14 @@ contract USXToken is ERC20, Ownable {
     }
 
     function setMaxTxAMount(uint256 amount) external onlyOwner{
+        require(amount >= uint256(115000 * (10**super.decimals())), "USX: Max transaction must be at least 115k");
+
         _maxTxAmount = amount;
     }
 
     function changeWalletLimit(uint256 newLimit) external onlyOwner {
+        require(newLimit >= uint256(115000 * (10**super.decimals())), "USX: Wallet limit must be at least 115k");
+        
         _walletMax  = newLimit;
     }
 
