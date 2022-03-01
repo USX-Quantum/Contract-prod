@@ -694,7 +694,7 @@ contract USXToken is ERC20, Ownable {
     event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiqudity);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
 
-    constructor() ERC20("USQ Test", "USQ1") {
+    constructor() ERC20("USX Quantum", "USX") {
 
         // Intialize the settings
         _uniswapV2Pair = IUniswapV2Pair(0x0000000000000000000000000000000000000000);
