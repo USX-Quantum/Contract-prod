@@ -664,22 +664,31 @@ contract USXToken is ERC20, Ownable {
 
     uint256 private _marketingFee;               
     uint256 private _buyBackFee;                  
-    uint256 private _baseFee;             
+    uint256 private _sellFee;             
     uint256 private _teamFee;                    
     uint256 private _liquityPercent;             
     uint256 private _totalFees;                  
     
+    mapping(address => bool) private _isLiquidityHolder;
     mapping (address => bool) private _isExcludedFromFees;  
     mapping (address => bool) private _isWalletLimitExempt; 
     mapping (address => bool) private _isTxLimitExempt;     
     mapping (address => bool) private _isBlacklisted;       
     mapping (address => bool) private _isAddressLocked;     
+    mapping (address => bool) private _isSniper;
 
     //bool private _tradingOpen;
     bool private _swapping;
     bool private _swapAndLiquifyEnabled;
     bool private _swapAndLiquifyByLimitOnly;
+    bool private _sniperCodeEnabled;
+    uint256 private _sniperBlockExclude;
 
+    uint256 public sniperCount;
+    uint256 public liquidityBlockNumber;
+    bool public liquidityAdded;
+    bool public tradingOpened;
+    
     modifier lockTheSwap {
         _swapping = true;
         _;
@@ -709,8 +718,8 @@ contract USXToken is ERC20, Ownable {
         _maxTxAmount = 2600000 * (10**super.decimals());
         _walletMax = 26000000 * (10**super.decimals());
         _swapTokensAtAmount = 25000 * (10**super.decimals());                         
-
-        updateFees(3, 3, 2, 2, 30);
+        
+        updateFees(3, 3, 2, 22, 40);
 
         _isWalletLimitExempt[owner()] = true;
         _isWalletLimitExempt[address(this)] = true;
@@ -722,8 +731,17 @@ contract USXToken is ERC20, Ownable {
         excludeFromFees(owner(), true);
         excludeFromFees(address(this), true);
 
+        _isLiquidityHolder[owner()] = true;
+
         _swapAndLiquifyEnabled = true;
         _swapAndLiquifyByLimitOnly = false;
+
+        _sniperCodeEnabled = true;
+        _sniperBlockExclude = 40;
+        sniperCount = 0;
+        liquidityBlockNumber = 0;
+        liquidityAdded = false;
+        tradingOpened = false;
 
         /*
             _mint is an internal function in ERC20.sol that is only called here,
@@ -735,14 +753,14 @@ contract USXToken is ERC20, Ownable {
     receive() external payable {}
    
     // VIEW functions
-    function blockTime() external view returns(uint){
-        return block.timestamp;
+    function blockNumber() external view returns(uint){
+        return block.number;
     }
     function exchangeRouter() external view returns(IUniswapV2Router02) {
         return _uniswapV2Router;
     }
-    function tokenPair() external view returns(IUniswapV2Pair) {
-        return _uniswapV2Pair;
+    function tokenPair() external view returns(address) {
+        return address(_uniswapV2Pair);
     }
     function marketingWallet() external view returns(address) {
         return _marketingWallet;
@@ -771,6 +789,12 @@ contract USXToken is ERC20, Ownable {
     function isTxLimitExempt(address account) external view returns(bool){
         return _isTxLimitExempt[account];
     }
+    function isLiquidityHolder(address account) external view returns(bool){
+        return _isLiquidityHolder[account];
+    }
+    function isSniper(address account) external view returns(bool){
+        return _isSniper[account];
+    }
     function maxTxAmount() external view returns(uint256) {
         return _maxTxAmount;
     }
@@ -786,8 +810,8 @@ contract USXToken is ERC20, Ownable {
     function buyBackFee() external view returns(uint256) {
         return _buyBackFee;
     }
-    function baseFee() external view returns(uint256){
-        return _baseFee;
+    function sellFee() external view returns(uint256){
+        return _sellFee;
     }
     function teamFee() external view returns(uint256){
         return _teamFee;
@@ -806,12 +830,12 @@ contract USXToken is ERC20, Ownable {
     }
 
     // SET functions
-   function updateFees(uint256 newBaseFee, uint256 newMarketingFee, uint256 newTeamFee, uint256 newBuyBackFee, uint256 newLiquidityPercent) public onlyOwner {
-        require(newBaseFee <= uint256(5), "USX: Base can not be > than 5%");
+   function updateFees(uint256 newMarketingFee, uint256 newTeamFee, uint256 newBuyBackFee, uint256 newSellFee, uint256 newLiquidityPercent) public onlyOwner {
+        require(newSellFee <= uint256(30), "USX: Sell can not be > than 30%");
         require((newMarketingFee + newTeamFee + newBuyBackFee) <= uint256(10), "USX: Total can not be > than 10%");
         require(newLiquidityPercent < uint256(50), "USX: Liquidity can not be > than 50%");
 
-        _baseFee = newBaseFee;
+        _sellFee = newSellFee;
         _liquityPercent = newLiquidityPercent;
 
         _marketingFee = newMarketingFee;
@@ -825,8 +849,24 @@ contract USXToken is ERC20, Ownable {
         _isTxLimitExempt[holder] = exempt;
     }
 
+    function removeSniper(address account) external onlyOwner { 
+        require(_isSniper[account], 'USX: Not a recorded sniper.');
+        _isSniper[account] = false;
+        sniperCount--;
+    }
+
+    function changeLiquidityHolder(address wallet, bool isLiqHolder) external onlyOwner {
+        require(_isLiquidityHolder[wallet] != isLiqHolder, "USX: LQ didn't change");
+
+        _isLiquidityHolder[wallet] = isLiqHolder;
+        _isWalletLimitExempt[wallet] = isLiqHolder;
+        _isTxLimitExempt[wallet] = isLiqHolder;
+
+        excludeFromFees(wallet, isLiqHolder);
+    }
+
     function setMarketingWallet(address wallet) external onlyOwner {
-        require(wallet != _marketingWallet, "USX: The marketing wallet already has that address");
+        require(wallet != _marketingWallet, "USX: Marketing has that address");
 
         _setWallet(wallet, _marketingWallet, 1);
 
@@ -834,7 +874,7 @@ contract USXToken is ERC20, Ownable {
     }
     
     function setTeamWallet(address wallet) external onlyOwner {
-        require(wallet != _teamWallet, "USX: The team wallet already has that address");
+        require(wallet != _teamWallet, "USX: Team has that address");
 
         _setWallet(wallet, _teamWallet, 2);
 
@@ -842,7 +882,7 @@ contract USXToken is ERC20, Ownable {
     }
 
     function setBuyBackWallet(address wallet) external onlyOwner {
-        require(wallet != _buyBackWallet, "USX: The buy back wallet already has that address");
+        require(wallet != _buyBackWallet, "USX: BuyBack has that address");
 
         _setWallet(wallet, _buyBackWallet, 3);
 
@@ -856,6 +896,7 @@ contract USXToken is ERC20, Ownable {
         {
             _isWalletLimitExempt[oldWallet] = false;
             _isTxLimitExempt[oldWallet] = false;
+
             excludeFromFees(oldWallet, false);        
         }
 
@@ -863,6 +904,7 @@ contract USXToken is ERC20, Ownable {
         {        
             _isWalletLimitExempt[newWallet] = true;
             _isTxLimitExempt[newWallet] = true;
+
             excludeFromFees(newWallet, true);
         }
 
@@ -870,13 +912,19 @@ contract USXToken is ERC20, Ownable {
     }
 
     function updateUniswapV2Router(address newAddress) external onlyOwner {
-        require(newAddress != address(_uniswapV2Router),   "USX: The router address is the same");
+        require(newAddress != address(_uniswapV2Router),   "USX: Router address is the same");
+
         emit UpdateUniswapV2Router(newAddress, address(_uniswapV2Router));
         _uniswapV2Router = IUniswapV2Router02(newAddress);
+
+        address newPair = IUniswapV2Factory(_uniswapV2Router.factory())
+            .createPair(address(this), _uniswapV2Router.WETH());
+
+        updateUniswapV2Pair(newPair);
     }
 
-    function updateUniswapV2Pair(address newPairAddress) external onlyOwner {
-        require(newPairAddress != address(_uniswapV2Pair), "USX: The pair address is the same");
+    function updateUniswapV2Pair(address newPairAddress) public onlyOwner {
+        require(newPairAddress != address(_uniswapV2Pair), "USX: Pair address is the same");
 
         if (address(_uniswapV2Pair) != 0x0000000000000000000000000000000000000000)
         {
@@ -939,11 +987,49 @@ contract USXToken is ERC20, Ownable {
         }
     }
     
+    function Launch() external onlyOwner {
+        _launch();
+    }
+
+    function Sweep() external onlyOwner {
+        uint256 balance = address(this).balance;
+        payable(owner()).transfer(balance);
+    }
+
     function _transfer(address from, address to, uint256 amount ) internal override {
         require(to != address(0), "USX: transfer to the 0 address");
         require(from != address(0), "USX: transfer from the 0 address");
-        require(!_isBlacklisted[from] && !_isBlacklisted[to], "USX: To/from address is blacklisted!");
+        require(!_isBlacklisted[from] && !_isBlacklisted[to], "USX: To/from address is blacklisted");
         
+        if(!_isExcludedFromFees[from] && !_isExcludedFromFees[to]) {
+            require(tradingOpened, "USX: Trading disabled");
+        }
+
+        if(_sniperCodeEnabled) {
+          // Reject the sell if sniper address.
+          if(_isSniper[from]) {
+            revert('Sniper rejected.');
+          }
+    
+          // Is this liquidity startup?
+          if(!liquidityAdded) {
+            _checkForFirstLiquidity(from, to);
+          } 
+          else {
+            if(
+                liquidityBlockNumber > 0
+                && from == address(_uniswapV2Pair)
+                && !_isLiquidityHolder[from]
+                && !_isLiquidityHolder[to]
+            ) {
+              if(block.number - liquidityBlockNumber < _sniperBlockExclude) {
+                _isSniper[to] = true;
+                sniperCount++;
+              }
+            }
+          }
+        }
+
         if(_isAddressLocked[from]) {
             require(_isExcludedFromFees[to], "USX: Tokens Locked!");
         }
@@ -978,12 +1064,12 @@ contract USXToken is ERC20, Ownable {
         }
 
         if(takeFee && _totalFees > 0) {
-            // Wallet to wallet - only charge extra fee
-        	uint256 fees = (amount * _baseFee) / 100;
+        	// Wallet to wallet - charge 2% (buyback) fee
+        	uint256 fees = (amount * _buyBackFee) / 100;
 
             // Sell fee added
             if(to == address(_uniswapV2Pair)) {
-                fees = (amount * (_totalFees + _baseFee)) / 100;
+                fees = (amount * (_totalFees + _sellFee)) / 100;
             }
 
             // Buy fee
@@ -998,7 +1084,22 @@ contract USXToken is ERC20, Ownable {
 
         super._transfer(from, to, amount);
     }
+
+    function _launch() private {
+        liquidityAdded = true;
+        tradingOpened = true;
+        liquidityBlockNumber = block.number;
+    }
+
+    function _checkForFirstLiquidity(address from, address to) private {
+        // Starts the anti sniper timer when liquidity has been added
+        require(!liquidityAdded, 'Liquidity already added and marked.');
     
+        if(_isLiquidityHolder[from] && to == address(_uniswapV2Pair)) {
+            _launch();
+        }
+    }
+
     function _swapBack(uint256 tokensToLiquify) internal lockTheSwap {
         uint256 startingBNBBalance = address(this).balance;
         // Calc tokens to swap
